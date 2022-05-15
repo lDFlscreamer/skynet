@@ -1,9 +1,10 @@
 import numpy as np
 import tensorflow as tf
+from keras import Model
 from keras.activations import selu, sigmoid
 from keras.engine.keras_tensor import KerasTensor
 from keras.layers import *
-from keras.losses import CategoricalCrossentropy, BinaryCrossentropy
+from keras.losses import CategoricalCrossentropy, BinaryCrossentropy, SparseCategoricalCrossentropy
 from keras.optimizer_v2.adam import Adam
 
 from skynet.DeepCoder.env.operator import num_operators
@@ -43,7 +44,7 @@ class PCCoder_Input_part(Input_part):
         self.prepare_layer_name(concat)
         self.layers[concat.name] = concat
 
-        result = concat([types, result_emb])
+        result = concat([result_emb, types])
 
         self.input_layer = input_l
         self.out_layer = concat
@@ -55,7 +56,7 @@ class PCCoder_inner_part(Inner_part):
     def __init__(self, part_name, input_to_part_layer: KerasTensor) -> None:
         super().__init__(part_name, [], None, None)
 
-        input_l = Dense(params.var_encoder_size, activation=selu)
+        input_l = Dense(params.var_encoder_size, activation=selu, dtype=tf.float32)
         self.prepare_layer_name(input_l)
         self.layers[input_l.name] = input_l
 
@@ -63,12 +64,18 @@ class PCCoder_inner_part(Inner_part):
         inp_result = tf.reshape(input_l.output,
                                 [-1, params.num_examples, input_l.output.shape[2] * input_l.output.shape[3]])
         input = [inp_result]
-        for i in range(0, 10 - 1):
+
+        dense = Dense(params.var_encoder_size, activation=selu)
+        self.prepare_layer_name(dense)
+        self.layers[dense.name] = dense
+        dense_output = dense(inp_result)
+        input.append(dense_output)
+        for i in range(0, 9 - 1):
             dense = Dense(params.var_encoder_size, activation=selu)
             self.prepare_layer_name(dense)
             self.layers[dense.name] = dense
 
-            concat = Concatenate(axis=-1)
+            concat = Concatenate(axis=-1, dtype=tf.float32)
             self.prepare_layer_name(concat)
             self.layers[concat.name] = concat
 
@@ -86,7 +93,7 @@ class PCCoder_inner_part(Inner_part):
         dense_layer_input = concat(input)
         dense_output = dense(dense_layer_input)
         input.append(dense_output)
-        result = tf.math.reduce_mean(input[-1], axis=1)
+        result = tf.math.reduce_mean(dense_output, axis=1)
         self.input_layer = input_l
         self.out_layer = dense
         self.out = result
@@ -139,22 +146,27 @@ class PCCoder_operator_head(Out_part):
 
 class PCCoder(Skynet_model_base):
 
-    def __init__(self, name: str) -> None:
-        inputs = [PCCoder_Input_part(f"{name}_Input")]
-        inner = PCCoder_inner_part(f"{name}_Inner", inputs[0].out)
-        outputs = [PCCoder_statement(f"{name}_statement", inner.out),
-                   PCCoder_drophead(f"{name}_drophead", inner.out),
-                   PCCoder_operator_head(f"{name}_operator_head", inner.out)
-                   ]
-        super().__init__(name, inputs, inner, outputs, None)
+    def __init__(self, name: str, inputs: list[Input_part] = None, inner: Inner_part = None,
+                 outputs: list[Out_part] = None,
+                 model: Model = None, log_dir=None) -> None:
+        if inputs is None:
+            inputs = [PCCoder_Input_part(f"{name}_Input")]
+        if inner is None:
+            inner = PCCoder_inner_part(f"{name}_Inner", inputs[0].out)
+        if outputs is None:
+            outputs = [PCCoder_statement(f"{name}_statement", inner.out),
+                       PCCoder_drophead(f"{name}_drophead", inner.out),
+                       PCCoder_operator_head(f"{name}_operator_head", inner.out)
+                       ]
+        super().__init__(name, inputs, inner, outputs, model,log_dir)
 
     def create_model(self):
         super().create_model()
         opt = Adam(learning_rate=0.001)
         losses = {
-            self.outputs[0].out_layer.name: CategoricalCrossentropy(),  # statement_criterion
+            self.outputs[0].out_layer.name: CategoricalCrossentropy(from_logits=True),  # statement_criterion
             self.outputs[1].out_layer.name: BinaryCrossentropy(),  # drop_criterion
-            self.outputs[2].out_layer.name: CategoricalCrossentropy(),  # operator_criterion
+            self.outputs[2].out_layer.name: CategoricalCrossentropy(from_logits=True)  # operator_criterion
         }
         loss_weights = {
             self.outputs[0].out_layer.name: 1.0,  # statement_criterion
@@ -165,7 +177,7 @@ class PCCoder(Skynet_model_base):
 
     def predict(self, x):
         statement_pred, drop_pred, _ = self(x)
-        statement_probs = tf.keras.activations.softmax(statement_pred, axis=1)
+        statement_probs = tf.keras.activations.softmax(statement_pred, axis=1).numpy()
         drop_indx = np.argmax(drop_pred, axis=-1)
         return np.argsort(statement_probs), statement_probs, drop_indx
 

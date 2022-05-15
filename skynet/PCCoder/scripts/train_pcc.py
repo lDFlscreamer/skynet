@@ -115,6 +115,7 @@ def train(args):
         data, statement_target, drop_target, operator_target = load_data(f, args.max_len)
 
     model = PCCoder()
+    model.load('D:\KPI\diplom\skynet\PCCoder\\result\model_weights\model_pcc')
 
     if use_cuda:
         model.cuda()
@@ -135,6 +136,7 @@ def train(args):
     lr_sched = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4)
 
     dataset_size = data.shape[0]
+    print(f"dataset size :{dataset_size}")
     indices = list(range(dataset_size))
     random.shuffle(indices)
 

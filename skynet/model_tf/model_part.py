@@ -15,8 +15,8 @@ class Model_part:
     def __init__(self, part_name, layers: list[Layer], part_input_layer=None, part_out_layer=None) -> None:
         super().__init__()
         self.part_name = part_name
-        self.input_layers = part_input_layer
-        self.out_layers = part_out_layer
+        self.input_layer = part_input_layer
+        self.out_layer = part_out_layer
         self._out = None
         self._input = None
         self.layers = {}
@@ -44,7 +44,8 @@ class Model_part:
                 self.out_layer = filtered_layers[-1]
             if self.input_layer is None:
                 self.input_layer = filtered_layers[0]
-        raise NotObviousStructureError('')  # todo
+        else:
+            raise NotObviousStructureError(f'cant found layer for {self.part_name} ')
 
     def prepare_part(self, layers: list[Layer]):
         for layer in layers:
@@ -67,6 +68,7 @@ class Model_part:
 
     def get_config(self):
         return {"part_name": self.part_name, "input": self.input_layer.name, "output": self.out_layer.name, }
+
     # def trainable_
 
     @property
@@ -126,8 +128,8 @@ class Model_part:
     @classmethod
     def from_config_and_model(cls, config: dict, model: Model):
         obj = cls.from_config(config)
-        obj.part_input_layer = model.get_layer(name='input'),
-        obj.part_out_layer = model.get_layer(name='output')
+        obj.part_input_layer = model.get_layer(name=config.get('input'), )
+        obj.part_out_layer = model.get_layer(name=config.get('output'))
         obj.decode_model(model=model)
         return obj
 

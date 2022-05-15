@@ -6,6 +6,7 @@ import torch
 
 from skynet.DeepCoder.dsl.DeepCoder_program import Program
 from skynet.DeepCoder.dsl.DeepCoder_value import Value
+from skynet.DeepCoder.env.env import ProgramState
 from skynet.PCCoder.env.search import cab, dfs
 from skynet.PCCoder.model.model import PCCoder
 from skynet.PCCoder.params import pcCoder_params as params
@@ -50,8 +51,8 @@ def solve_problems(problems, method, model, timeout, max_program_len, max_beam_s
 
 
 def solve_problem_worker(data):
-    examples = Example.from_line(data)
-    env = ProgramEnv(examples)
+    examples = Example.from_line(data,Value)
+    env = ProgramEnv(examples,ProgramState)
 
     if method == 'beam':
         solution = cab(env, max_program_len, model, params.cab_beam_size, params.cab_width,
